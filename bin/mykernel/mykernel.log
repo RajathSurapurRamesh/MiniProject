@@ -1,0 +1,1 @@
+Compiler Command: aoc -march=emulator -board=pac_a10 mykernel.cl -o bin/mykernel.aocx
