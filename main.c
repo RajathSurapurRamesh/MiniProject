@@ -1,5 +1,24 @@
-#include <stdlib.h>
-#include <math.h>
+#include <iostream>
+#include <stdio.h>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <array>
+#include <random>
+#include <cmath>
+#include <unordered_map>
+#include <iomanip>
+using namespace std;
+
+#define BOARD_COLS 4
+#define BOARD_ROWS 3
+#define exp_rate 0.3 //exploration rate = 1/3
+#define lr 0.2   //learning rate
+
+const int LOSE[2] = {1,3};
+const int WIN[2] ={0,3};
+const int START [2] ={2,0};
+const int actions[] = {0,1,2,3};
 
 #ifdef __APPLE__
     #include <OpenCL/opencl.h>
@@ -111,7 +130,7 @@ int main()
             exit(1);
         }
         
-        source_str = (char*)malloc(MAX_SOURCE_SIZE);
+source_str = (char*)malloc(MAX_SOURCE_SIZE);
         source_size = fread(source_str, 1, MAX_SOURCE_SIZE, fp);
         fclose(fp);
 
@@ -135,46 +154,155 @@ int main()
     ret = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
     errorCheck(ret, "Build Program");
 
-    /* Create OpenCL Kernel */
-    kernel = clCreateKernel(program, "calculatePi", &ret);
-    errorCheck(ret, "Create Kernel");
+struct hash_pair { 
+    template <class T1, class T2> 
+    size_t operator()(const pair<T1, T2>& p) const
+    { 
+        auto hash1 = hash<T1>{}(p.first); 
+        auto hash2 = hash<T2>{}(p.second); 
+        return hash1 ^ hash2; 
+    } 
+}; 
 
-    float *result = (float *) calloc(1, sizeof(float));
+int giveReward(vector<int> &state){
+    if(state == WIN){
+        return 1;
+    }
+    else if(state == LOSE){
+        return -1;
+    }
+    else{
+        return 0;
+    }
+}
 
-    /* Create buffers to hold the text characters and count */
-    cl_mem result_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float), result, &ret);
-    errorCheck(ret, "Result Buffer");
-    
-    int numIterations[1] = {100};
-    /* Create kernel argument */
-    ret = clSetKernelArg(kernel, 0, sizeof(cl_int), (void *)&numIterations);
-    ret |= clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&result_buffer);
-    ret |= clSetKernelArg(kernel, 2, global_size*sizeof(cl_float), NULL);
-    ret |= clSetKernelArg(kernel, 3, sizeof(cl_int), (void *)&global_size);
-    errorCheck(ret, "Set Kernel Args");
+bool isEndFunc(vector<int> &state){
+    if(state == WIN || state == LOSE)
+        return true;
+    else return false;
+}
 
-    /* Enqueue kernel */
-    ret = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_size, &local_size, 0, NULL, NULL);
-    errorCheck(ret, "Kernel Enqueue");
+vector<int> nxtPosition(int action,vector<int> &state){
+    vector<int> nxtState; //2 spaces, initialize to 0 {0,0}
+    if(true){
+        switch(action){
+            case 0: nxtState = {state[0]-1, state[1]}; // up
+                    break;
+            case 1: nxtState = {state[0]+1, state[1]}; //down
+                    break;
+            case 2: nxtState = {state[0], state[1]-1}; //left
+                    break;
+            case 3: nxtState = {state[0], state[1]+1}; //right
+                    break;
+            default: nxtState = {state[0]-1, state[1]};
+        }
+    }
+    vector<int> obstacle{1,1}; //obstacle position
+    if(nxtState[0] >= 0 && nxtState[0] <=2){
+        if (nxtState[1] >= 0 && nxtState[1] <= 3){
+            if(nxtState != obstacle){
+                return nxtState;
+            }
+        }
+    }
+    return state;
+}
 
-    errorCheck(clFinish(command_queue), "clFinish");
-    
-    /* Read and print the result */
-    ret = clEnqueueReadBuffer(command_queue, result_buffer, CL_TRUE, 0, sizeof(float), result, 0, NULL, NULL);
-    errorCheck(ret, "Buffer Read");
-    
-    printf("Final calculated value: %f \n", result[0]);
+int chooseAction(unordered_map<pair<int, int>, float, hash_pair> &state_values, vector<int> &state){
+    float mx_nxt_reward = 0.0;
+    float nxt_reward = 0.0;
+    int action;
+    float num_float = static_cast <float> (rand()) / static_cast <float> (RAND_MAX); //0.0 to 1.0
+    int num_int = static_cast <float> (rand()) / static_cast <float> (RAND_MAX/4); //0 to 3
+    if(num_float <= exp_rate){
+        action = num_int;
+    }
+    else{
+        //greedy
+        for (int a : actions){
+            vector<int> state_tmp = nxtPosition(action, state);
+            pair<int, int>pair_tmp = make_pair(state_tmp[0], state_tmp[1]);
+            nxt_reward = state_values[pair_tmp];
+            if(nxt_reward >= mx_nxt_reward){
+                action = a;
+                mx_nxt_reward = nxt_reward;
+            }
+        }
+    }
+    return action;
+}
 
-    free(result);
-    
+void reset(vector<vector<int> > &states, vector<int> &state, bool &isEnd){
+    states.clear();
+    state = START;
+    isEnd = false;
+}
+
+vector<int> takeAction(int action, vector<int> &state){
+    vector<int> position;
+    position = nxtPosition(action, state);
+    state = position;
+    return state;
+}
+
+float round3(float var) { 
+    // use array of chars to store number as a string. 
+    char str[40];  
+  
+    // Print in string the value of var with two decimal point 
+    sprintf(str, "%.3f", var); 
+  
+    // scan string value in var  
+    sscanf(str, "%f", &var);  
+    return var;  
+} 
+
+void showValues(unordered_map<pair<int, int>, float, hash_pair> &state_values){
+    float reward;
+    for(int i=0;i<BOARD_ROWS;i++){
+        cout<<"-----------------------------------------"<<endl;
+        cout<<"| ";
+        for(int j=0;j<BOARD_COLS;j++){
+            pair<int, int>pair_tmp = make_pair(i,j);
+            cout << std::fixed << std::showpoint;
+            cout << std::setprecision(3);
+            if(state_values[pair_tmp]<0) cout<<state_values[pair_tmp]<<"| ";
+            else cout<<" "<<state_values[pair_tmp]<<"| ";
+        }
+        cout<<endl;
+    }
+    cout<<"-----------------------------------------"<<endl;
+}
+
+
+int main(int argc, char *argv[]){
+    srand (static_cast <unsigned> (time(0)));
+    int board[BOARD_ROWS][BOARD_COLS];
+    board[1][1] = -1;
+    vector<int> state(2);
+    vector<vector<int> > states{};
+    bool isEnd = false;
+    unordered_map<pair<int, int>, float, hash_pair> state_values;
+
+    //initialize all state values to zero
+    for(int i =0; i<=BOARD_ROWS; i++ ){
+        for(int j= 0; j<= BOARD_COLS; j++){
+            state_values[{i,j}] = 0.0;
+        } 
+    }
+    state = START;
+    int rounds = atoi(argv[1]);
+
+    //start playing
+    play(rounds, isEnd, state, state_values, states);
+    showValues(state_values);
+    return 0;    
+}
     clReleaseMemObject(result_buffer);
     clReleaseCommandQueue(command_queue);
     clReleaseKernel(kernel);
     clReleaseProgram(program);
     clReleaseContext(context);
-
-    return 0;
-}
 
 void errorCheck(cl_int ret, char *check)
 {
