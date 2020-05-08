@@ -3,6 +3,20 @@ __kernel void play(int rounds, bool &isEnd, vector<int> &state, unordered_map<pa
    __private  int i = 0;
    __private float reward = 0.0;
    __private  int action;
+   __private const uint gid = get_global_id(0);
+   __private const uint lid = get_local_id(0);
+   int numWorkers = 12;
+    
+    if(gid == numWorksers)
+    {
+        for(i = 0; i< numWorkers; i++)
+        {
+            reward = 0.00f;
+        }
+    }
+    
+    barrier(CLK_LOCAL_MEM_FENCE);
+    
     while(i < rounds){
         if(isEnd){
             reward = giveReward(state);      //only has 1, -1, 0
