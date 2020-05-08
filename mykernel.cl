@@ -1,60 +1,38 @@
-__kernel void calculatePi(int numIterations, __global float *outputPi, __local float* local_result, int numWorkers)
-{
-    __private const uint gid = get_global_id(0);
-    __private const uint lid = get_local_id(0);
-    __private float offset = numIterations*gid*2; 
-    __private float sum = 0.0f;
-    __private int i;
-    __private float float_i;
+__kernel void play(int rounds, bool &isEnd, vector<int> &state, unordered_map<pair<int, int>, float, hash_pair> &state_values, vector<vector<int> > &states){
+    //unordered_map<vector<int>, float> state_values;
+   __private  int i = 0;
+   __private float reward = 0.0;
+   __private  int action;
+    while(i < rounds){
+        if(isEnd){
+            reward = giveReward(state);      //only has 1, -1, 0
+            cout<<reward<<endl;
+            for(auto it : state_values){
+                pair<int, int>pair_tmp = make_pair(state[0], state[1]);
+                if(it.first==pair_tmp){
+                    state_values[it.first] = reward;
+                }
+            }
+            //cout<<"GAME END REWARD "<<round3(reward)<<endl;
+            vector<int> path(2,0);
+            reverse(states.begin(), states.end());
+            for(auto s : states){
+                pair<int, int>pair_tmp = make_pair(s[0], s[1]);
+                reward = state_values[pair_tmp] + lr *(reward - state_values[pair_tmp]);
+                state_values[pair_tmp] = round3(reward);
+            }
+            reset(states, state, isEnd);
+            i+=1;
+        }
+        else{
+            action = chooseAction(state_values, state);
+            states.push_back(nxtPosition(action, state));
+            state = takeAction(action,state);
 
-    // Have the last worker initialize local_result
-    if (gid == numWorkers-1)
-    {
-        for (i = 0; i < numWorkers; i++)
-        {
-            local_result[i] = 0.0f;
+            /* printf("action : %d, state : %d, %d",action,state[0],state[1]);*/
+
+            isEnd = isEndFunc(state);
         }
     }
 
-    // Have all workers wait until this is completed
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    
-    // Have each worker calculate their portion of pi
-    // This is a private value
-    for (i = 0; i < numIterations; i++) 
-    {
-	float_i = i;
-	
-	if (i % 2 == 0)
-	{
-           sum += 4.0 * 1.0 / (1 + 2*float_i + offset);
- 	}
-	else
-	{
- 	   sum -= 4.0 * 1.0 / (1 + 2*float_i + offset);
-	}
-    }
-       
-    // Have each worker move their value to the appropriate
-    // local_result slot so that the first worker can see it
-    // when reducing next
-    local_result[gid] = sum;
-	
-    // Make sure all workers complete this task before continuing
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    // Have the last worker add up all of the other worker's values
-    // to get the final value
-    // Last worker use verifies that the worker and memory allocation are correct
-    if (gid == numWorkers-1)
-    {
-        outputPi[0] = 0;
-        for (i = 0; i < numWorkers; i++)
-        {
-            outputPi[0] += local_result[i]; 
-        }
-    }
-
-    barrier(CLK_GLOBAL_MEM_FENCE);
 }
